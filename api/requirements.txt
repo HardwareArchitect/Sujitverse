@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+python-jose[cryptography]
+bcrypt
+python-multipart
+pillow
+pydantic-settings
