@@ -55,3 +55,17 @@ export async function uploadFile(
     },
   });
 }
+
+
+export type Summary = {
+  photo_count: number;
+  video_count: number;
+  file_count: number;
+  total_size: number;
+  recents: FileEntry[];
+};
+
+export async function getSummary(): Promise<Summary> {
+  const r = await api.get<Summary>("/files/summary");
+  return r.data;
+}

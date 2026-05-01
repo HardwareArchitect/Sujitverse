@@ -7,6 +7,7 @@ import { logout as logoutApi } from "../api/auth";
 import { entryIcon, PlusIcon } from "../components/Icons";
 import Breadcrumb from "../components/Breadcrumb";
 import UploadZone from "../components/UploadZone";
+import HomeHero from "../components/HomeHero";
 import Viewer from "../components/Viewer";
 import { formatBytes, formatDate } from "../lib/format";
 
@@ -106,6 +107,10 @@ export default function FilesPage() {
           </button>
         </div>
       </div>
+
+      {path === "" && user && (
+        <HomeHero username={user.username} onOpen={onEntryClick} />
+      )}
 
       <div className="mb-6">
         <UploadZone parentPath={path} onUploaded={load} />

@@ -180,6 +180,47 @@ def list_path(rel_path: str, user: User = Depends(get_current_user)):
     return _list_dir(target, user.username)
 
 
+
+@router.get("/summary")
+def summary(user: User = Depends(get_current_user)):
+    """Counts of photos/videos/files + total size + 6 most recently modified files."""
+    root = ensure_user_root(user.username).resolve()
+    photo_count = video_count = file_count = 0
+    total_size = 0
+    recents: list[tuple[float, Path]] = []
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        # skip hidden dirs
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        for fn in filenames:
+            if fn.startswith("."):
+                continue
+            full = Path(dirpath) / fn
+            try:
+                st = full.stat()
+            except OSError:
+                continue
+            file_count += 1
+            total_size += st.st_size
+            mt = mimetypes.guess_type(fn)[0] or ""
+            if mt.startswith("image/"):
+                photo_count += 1
+            elif mt.startswith("video/"):
+                video_count += 1
+            recents.append((st.st_mtime, full))
+
+    recents.sort(key=lambda t: t[0], reverse=True)
+    recent_entries = [_entry(p, user.username) for _, p in recents[:6]]
+
+    return {
+        "photo_count": photo_count,
+        "video_count": video_count,
+        "file_count": file_count,
+        "total_size": total_size,
+        "recents": [e.model_dump() for e in recent_entries],
+    }
+
+
 @router.delete("/{rel_path:path}")
 def delete(rel_path: str, user: User = Depends(get_current_user)):
     target = resolve(user.username, rel_path)

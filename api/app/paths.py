@@ -1,6 +1,7 @@
 """Path resolution with strict containment checks + user provisioning."""
 import os
 import grp
+import stat
 from pathlib import Path
 from fastapi import HTTPException, status
 
@@ -11,30 +12,39 @@ def user_root(username: str) -> Path:
     return Path(settings.files_root) / username / "data"
 
 
-def ensure_user_root(username: str) -> Path:
-    """Idempotent: create user_root if missing with correct perms.
+def _safe_chmod(path: Path, mode: int) -> None:
+    """chmod that survives systemd RestrictSUIDSGID: try the desired mode,
+    fall back to one without setuid/setgid bits if EPERM."""
+    try:
+        os.chmod(path, mode)
+    except PermissionError:
+        os.chmod(path, mode & ~(stat.S_ISUID | stat.S_ISGID))
 
-    Layout matches what we set up manually for the first user:
-      /srv/sujitverse/files/<user>/         root:sujitverse 2775
-        data/                               sujitverse:sftpusers 2770
+
+def ensure_user_root(username: str) -> Path:
+    """Idempotent: create user_root if missing.
+
+    Parent /srv/sujitverse/files/ already has setgid + group=sujitverse,
+    so new dirs inherit the group correctly without us needing S_ISGID here.
     """
     base = Path(settings.files_root)
     user_dir = base / username
     data_dir = user_dir / "data"
 
     if not user_dir.exists():
-        user_dir.mkdir(mode=0o2775, exist_ok=True)
+        user_dir.mkdir(mode=0o775, exist_ok=True)
+        _safe_chmod(user_dir, 0o2775)
+
     if not data_dir.exists():
-        data_dir.mkdir(mode=0o2770, exist_ok=True)
-        # Set group to sftpusers so SFTP users in that group can also read/write
+        data_dir.mkdir(mode=0o770, exist_ok=True)
+        # Try to set group to sftpusers so SFTP users can also read/write.
+        # Failure is non-fatal — group still inherits from parent.
         try:
             sftpusers_gid = grp.getgrnam("sftpusers").gr_gid
-            os.chown(data_dir, os.geteuid(), sftpusers_gid)
-            # Re-apply mode after chown (chown clears setgid on some kernels)
-            os.chmod(data_dir, 0o2770)
+            os.chown(data_dir, -1, sftpusers_gid)
         except (KeyError, PermissionError):
-            # If sftpusers doesn't exist or we can't chown, leave at default group.
             pass
+        _safe_chmod(data_dir, 0o2770)
 
     return data_dir
 
