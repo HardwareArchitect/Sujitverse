@@ -1,11 +1,112 @@
+/* Inter (variable) and Fraunces (variable) from the official Google Fonts CDN */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root { height: 100%; }
-body {
-  background: #0b0d10;
-  color: #e8eaed;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  -webkit-font-smoothing: antialiased;
+@layer base {
+  html, body, #root { height: 100%; }
+  html { color-scheme: dark; }
+  body {
+    background: #070809;
+    color: #f1f3f6;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: "ss01", "cv11";  /* Inter's tabular numerals + alt 'l' */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Subtle grain that gives surfaces material */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(255,255,255,0.018) 1px, transparent 0);
+    background-size: 3px 3px;
+    opacity: 0.6;
+  }
+
+  /* Make sure the rest of the app sits above the grain */
+  #root { position: relative; z-index: 1; }
+
+  /* Cleaner focus ring */
+  *:focus-visible {
+    outline: 2px solid #7aa2ff;
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* Inputs that feel like Linear's */
+  input, select, textarea {
+    font-family: inherit;
+    color: inherit;
+  }
+
+  /* Tabular numerals throughout — sizes look right in lists */
+  table, .tabular { font-variant-numeric: tabular-nums; }
+
+  /* Selection */
+  ::selection { background: rgba(122, 162, 255, 0.25); color: #f1f3f6; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: #23272f;
+    border-radius: 6px;
+    border: 2px solid #070809;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: #2e333c; }
+}
+
+@layer components {
+  /* Button primitives — used by class composition */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg
+           text-sm font-medium tracking-tight transition
+           disabled:opacity-50 disabled:cursor-not-allowed
+           focus-visible:outline-2 focus-visible:outline-accent;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-bg shadow-soft hover:bg-accent/90 active:bg-accent/80;
+  }
+  .btn-ghost {
+    @apply btn border border-border text-subtle hover:bg-surface hover:border-border-strong;
+  }
+  .btn-danger {
+    @apply btn text-danger hover:bg-danger/10 border border-transparent hover:border-danger/20;
+  }
+
+  /* Card primitive */
+  .card {
+    @apply bg-surface border border-border rounded-2xl shadow-soft;
+  }
+  .card-raised {
+    @apply card shadow-raised;
+  }
+
+  /* Input primitive */
+  .input {
+    @apply w-full px-3.5 py-2.5 rounded-lg bg-elevated border border-border
+           text-text placeholder:text-faint
+           focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40
+           transition;
+  }
+
+  /* Display heading helper */
+  .display {
+    @apply font-display tracking-tight;
+    font-variation-settings: "opsz" 36;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium
+           bg-raised text-subtle border border-border;
+  }
 }

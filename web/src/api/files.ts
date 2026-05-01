@@ -27,3 +27,31 @@ export async function makeDir(relPath: string): Promise<void> {
 export async function deletePath(relPath: string): Promise<void> {
   await api.delete(`/files/${encodeURI(relPath)}`);
 }
+
+export async function getSignedUrl(relPath: string): Promise<string> {
+  const r = await api.get<{ url: string; expires_in: number }>(
+    `/files/sign/${encodeURI(relPath)}`
+  );
+  return r.data.url;
+}
+
+export type UploadProgress = { loaded: number; total: number };
+
+export async function uploadFile(
+  parentPath: string,
+  file: File,
+  onProgress?: (p: UploadProgress) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const form = new FormData();
+  form.append("upload_file", file);
+  await api.post(`/files/upload`, form, {
+    params: { rel_path: parentPath },
+    signal,
+    onUploadProgress: (e) => {
+      if (onProgress && e.total) {
+        onProgress({ loaded: e.loaded, total: e.total });
+      }
+    },
+  });
+}

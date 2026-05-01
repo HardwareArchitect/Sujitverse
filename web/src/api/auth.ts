@@ -20,3 +20,15 @@ export async function me(): Promise<User> {
   const r = await api.get<User>("/auth/me");
   return r.data;
 }
+
+
+export async function signup(
+  username: string,
+  password: string,
+  invite_code: string
+): Promise<LoginResponse> {
+  const r = await api.post<LoginResponse>("/auth/signup", {
+    username, password, invite_code,
+  });
+  return r.data;
+}
