@@ -1,11 +1,10 @@
 import mimetypes
 import os
-import shutil
 from pathlib import Path
 from typing import Optional
 
 from fastapi import (
-    APIRouter, Depends, HTTPException, UploadFile, File, status, Request,
+    APIRouter, Depends, HTTPException, UploadFile, File, status, Request, Query,
 )
 from fastapi.responses import StreamingResponse, Response
 
@@ -13,6 +12,7 @@ from app.deps import get_current_user
 from app.models import User
 from app.paths import resolve, ensure_user_root, relative_to_root, user_root
 from app.schemas import FileEntry, DirListing
+from app.security import create_file_token, decode_file_token
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -34,7 +34,6 @@ def _entry(p: Path, username: str) -> FileEntry:
 def _list_dir(target: Path, username: str) -> DirListing:
     entries = []
     for child in sorted(target.iterdir(), key=lambda c: (not c.is_dir(), c.name.lower())):
-        # Skip dotfiles for now; revisit if anyone complains
         if child.name.startswith("."):
             continue
         entries.append(_entry(child, username))
@@ -62,11 +61,6 @@ async def upload(
     upload_file: UploadFile = File(...),
     user: User = Depends(get_current_user),
 ):
-    """Upload a file to rel_path/<filename> under the user's root.
-
-    rel_path is a folder (use "" or "/" for the user's root). The filename
-    comes from upload_file.filename and is sanitized.
-    """
     if upload_file.filename is None or "/" in upload_file.filename or upload_file.filename in (".", ".."):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid filename")
     parent = resolve(user.username, rel_path) if rel_path else ensure_user_root(user.username)
@@ -75,7 +69,6 @@ async def upload(
     target = resolve(user.username, str(Path(rel_path) / upload_file.filename) if rel_path else upload_file.filename)
     if target.exists():
         raise HTTPException(status.HTTP_409_CONFLICT, "File already exists")
-    # Stream to disk
     with target.open("wb") as out:
         while True:
             chunk = await upload_file.read(CHUNK)
@@ -86,8 +79,17 @@ async def upload(
     return {"uploaded": relative_to_root(user.username, target), "size": target.stat().st_size}
 
 
+@router.get("/sign/{rel_path:path}")
+def sign(rel_path: str, user: User = Depends(get_current_user)):
+    """Returns a short-lived signed URL the browser can use directly in <img>/<video>."""
+    target = resolve(user.username, rel_path)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "File not found")
+    token = create_file_token(username=user.username, rel_path=rel_path, ttl_seconds=300)
+    return {"url": f"/api/files/download/{rel_path}?token={token}", "expires_in": 300}
+
+
 def _stream_file(path: Path, start: int, end: int):
-    """Yield bytes from path[start..end] inclusive, in CHUNK pieces."""
     remaining = end - start + 1
     with path.open("rb") as f:
         f.seek(start)
@@ -99,9 +101,37 @@ def _stream_file(path: Path, start: int, end: int):
             yield data
 
 
+def _resolve_user_for_download(
+    rel_path: str,
+    request: Request,
+    token: Optional[str],
+) -> str:
+    """Returns username allowed to read rel_path. Accepts either a signed token
+    (preferred for browser-direct loads) or a Bearer access token."""
+    # Signed file token takes priority
+    if token:
+        payload = decode_file_token(token)
+        if payload and payload.get("pth") == rel_path:
+            return payload["sub"]
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid file token")
+    # Fall back to Authorization Bearer (lets curl/manual API still work)
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        from app.security import decode_access_token
+        payload = decode_access_token(auth[7:])
+        if payload:
+            return payload["sub"]
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
+
+
 @router.get("/download/{rel_path:path}")
-def download(rel_path: str, request: Request, user: User = Depends(get_current_user)):
-    target = resolve(user.username, rel_path)
+def download(
+    rel_path: str,
+    request: Request,
+    token: Optional[str] = Query(default=None),
+):
+    username = _resolve_user_for_download(rel_path, request, token)
+    target = resolve(username, rel_path)
     if not target.exists() or not target.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "File not found")
     file_size = target.stat().st_size
@@ -146,7 +176,7 @@ def list_path(rel_path: str, user: User = Depends(get_current_user)):
     if not target.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     if not target.is_dir():
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a directory; use /files/download/")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a directory")
     return _list_dir(target, user.username)
 
 
@@ -159,7 +189,7 @@ def delete(rel_path: str, user: User = Depends(get_current_user)):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot delete root")
     if target.is_dir():
         try:
-            target.rmdir()  # only succeeds if empty
+            target.rmdir()
         except OSError:
             raise HTTPException(status.HTTP_409_CONFLICT, "Folder not empty")
     else:

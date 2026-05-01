@@ -1,10 +1,6 @@
-"""Path resolution with strict containment checks.
-
-Every public function takes a username and a user-supplied relative path,
-resolves it under the user's data root, and refuses to return anything
-outside that root.
-"""
+"""Path resolution with strict containment checks + user provisioning."""
 import os
+import grp
 from pathlib import Path
 from fastapi import HTTPException, status
 
@@ -16,17 +12,34 @@ def user_root(username: str) -> Path:
 
 
 def ensure_user_root(username: str) -> Path:
-    root = user_root(username)
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+    """Idempotent: create user_root if missing with correct perms.
+
+    Layout matches what we set up manually for the first user:
+      /srv/sujitverse/files/<user>/         root:sujitverse 2775
+        data/                               sujitverse:sftpusers 2770
+    """
+    base = Path(settings.files_root)
+    user_dir = base / username
+    data_dir = user_dir / "data"
+
+    if not user_dir.exists():
+        user_dir.mkdir(mode=0o2775, exist_ok=True)
+    if not data_dir.exists():
+        data_dir.mkdir(mode=0o2770, exist_ok=True)
+        # Set group to sftpusers so SFTP users in that group can also read/write
+        try:
+            sftpusers_gid = grp.getgrnam("sftpusers").gr_gid
+            os.chown(data_dir, os.geteuid(), sftpusers_gid)
+            # Re-apply mode after chown (chown clears setgid on some kernels)
+            os.chmod(data_dir, 0o2770)
+        except (KeyError, PermissionError):
+            # If sftpusers doesn't exist or we can't chown, leave at default group.
+            pass
+
+    return data_dir
 
 
 def resolve(username: str, rel: str) -> Path:
-    """Join rel under user_root, resolve, and assert containment.
-
-    Raises 400 on traversal attempts or absolute paths. Does NOT require
-    the target to exist yet (used by upload too).
-    """
     if rel.startswith("/") or "\x00" in rel:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid path")
     root = ensure_user_root(username).resolve(strict=True)
@@ -40,3 +53,14 @@ def resolve(username: str, rel: str) -> Path:
 
 def relative_to_root(username: str, abs_path: Path) -> str:
     return str(abs_path.relative_to(user_root(username).resolve()))
+
+
+RESERVED_USERNAMES = {
+    "admin", "administrator", "root", "system", "api", "support",
+    "help", "info", "www", "mail", "postmaster", "webmaster",
+    "_shared", "shared", "public", "anon", "anonymous",
+}
+
+
+def is_reserved_username(name: str) -> bool:
+    return name.lower() in RESERVED_USERNAMES

@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     thumbnails_root: str = "/srv/sujitverse/thumbnails"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
+    max_users: int = 15
+    invite_expire_days: int = 7
 
     model_config = SettingsConfigDict(
         env_file="/srv/sujitverse/api/.env",

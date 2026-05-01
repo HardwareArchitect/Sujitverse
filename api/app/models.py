@@ -32,3 +32,14 @@ class FileMeta(SQLModel, table=True):
     has_thumbnail: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
     modified_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Invite(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    code_hash: str = Field(unique=True, index=True)
+    created_by_user_id: int = Field(foreign_key="user.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: datetime
+    used_at: Optional[datetime] = None
+    used_by_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    revoked: bool = False

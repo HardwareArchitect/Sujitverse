@@ -46,3 +46,24 @@ class FileEntry(BaseModel):
 class DirListing(BaseModel):
     path: str
     entries: list[FileEntry]
+
+
+class InviteCreate(BaseModel):
+    expires_in_days: int = Field(default=7, ge=1, le=90)
+
+
+class InviteOut(BaseModel):
+    id: int
+    code: str | None = None  # only set when first created
+    created_at: float
+    expires_at: float
+    used_at: float | None = None
+    used_by_username: str | None = None
+    revoked: bool
+    status: str  # "active" | "used" | "expired" | "revoked"
+
+
+class SignupRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    password: str = Field(min_length=8, max_length=128)
+    invite_code: str = Field(min_length=8, max_length=64)
